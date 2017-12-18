@@ -28,7 +28,6 @@ class CINet
 public:
 	//构造、析构
 	CINet();
-	CINet(NetType net_type, std::string ip, UINT port);
 	~CINet();
 
 	//连接

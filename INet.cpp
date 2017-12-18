@@ -9,10 +9,7 @@ CINet::CINet()
 	m_max_client_number = DEFAULT_LINK_NUMBER;
 	m_strIP = DEFAULT_IP;
 	m_port = DEFAULT_PORT;
-}
-CINet::CINet(NetType net_type, std::string ip, UINT port)
-{
-	InitializeNet(net_type, ip, port);
+	m_udp_local_port = UDP_LOCAL_PORT;
 }
 
 CINet::~CINet()
@@ -73,7 +70,7 @@ int CINet::UDPSendData(char* str_data)
 	SOCKET temp_socket = INVALID_SOCKET;
 	try
 	{
-		if ((m_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
+		if ((temp_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
 			return -1;
 
 		SOCKADDR_IN temp_addr;
