@@ -1,10 +1,12 @@
 #include "INet.h"
-
+#include <thread>
 #pragma comment(lib,"ws2_32.lib")
 
+std::mutex g_mutex;
 CINet::CINet()
 {
 	m_socket = INVALID_SOCKET;
+	m_event = WSA_INVALID_EVENT;
 	m_net_type = NetType::TCP_CLIENT_ASK_ANSWER;
 	m_max_client_number = DEFAULT_LINK_NUMBER;
 	m_strIP = DEFAULT_IP;
@@ -34,7 +36,7 @@ void CINet::Shutdown()
 	m_socket = INVALID_SOCKET;
 }
 
-bool CINet::connecting()
+bool CINet::Connect()
 {
 	if (m_net_type == UDP)
 		return true;
@@ -114,7 +116,7 @@ int CINet::TCPClientSendData(char* str_data)
 	{
 		if (m_socket == INVALID_SOCKET)
 		{
-			if (!connecting())
+			if (!Connect())
 				return -1;
 		}
 		
@@ -149,7 +151,7 @@ int CINet::TCPServerSendData(char* str_data)
 	{
 		if (m_socket == INVALID_SOCKET)
 		{
-			if (!connecting()) return -1;
+			if (!Connect()) return -1;
 		}
 
 		while (send_size != strlen(str_data))
@@ -181,9 +183,57 @@ bool CINet::TCPServerConnect()
 	{
 		if ((m_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
 			return false;
+
+		SOCKADDR_IN local_address;
+		local_address.sin_family = AF_INET;
+		local_address.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+		local_address.sin_port = htons(m_port);
+		memset(local_address.sin_zero, 0, sizeof(local_address.sin_zero));
+
+		if (bind(m_socket, (struct sockaddr*)&local_address, sizeof(SOCKADDR_IN))
+			== SOCKET_ERROR)
+		{
+			int ierror = GetLastError();
+
+			closesocket(m_socket);
+			m_socket = INVALID_SOCKET;
+			return false;
+		}
+			
+
+		if (listen(m_socket, m_max_client_number) == SOCKET_ERROR)
+		{
+			closesocket(m_socket);
+			m_socket = INVALID_SOCKET;
+			return false;
+		}
+
+		m_event = WSACreateEvent();
+		if (m_event == WSA_INVALID_EVENT)
+		{
+			closesocket(m_socket);
+			m_socket = INVALID_SOCKET;
+			return false;
+		}
+
+		if (WSAEventSelect(m_socket, m_event, FD_ACCEPT)
+			== SOCKET_ERROR)
+		{
+			closesocket(m_socket);
+			m_socket = INVALID_SOCKET;
+			WSACloseEvent(m_event);
+			m_event = WSA_INVALID_EVENT;
+			return false;
+		}
+
+		std::thread temp_thread(TCPAcceptThread,m_event,m_socket,m_client_umap);
+		temp_thread.join();
+		
 	}
 	catch (...)
 	{
+		closesocket(m_socket);
+		m_socket = INVALID_SOCKET;
 		return false;
 	}
 	return true;
@@ -212,6 +262,8 @@ bool CINet::TCPClientConnect()
 	}
 	catch (...)
 	{
+		closesocket(m_socket);
+		m_socket = INVALID_SOCKET;
 		return false;
 	}
 	return true;
@@ -238,7 +290,7 @@ int CINet::TCPClientReciveData(char* str_data)
 	{
 		if (m_socket == INVALID_SOCKET)
 		{
-			if (!connecting()) return -1;
+			if (!Connect()) return -1;
 		}		
 	}
 	catch (...)
@@ -246,4 +298,32 @@ int CINet::TCPClientReciveData(char* str_data)
 		return -1;
 	}
 	return recv_size;
+}
+
+void CINet::TCPAcceptThread(WSAEVENT &wsa_event, SOCKET &server_socket, 
+	std::unordered_map <std::string, SOCKET> &client_map)
+{
+	SOCKADDR_IN accept_addr;	
+	int addrlen = sizeof(accept_addr);
+	SOCKET sockAccept = INVALID_SOCKET;
+	while (true)
+	{
+		if (WSAWaitForMultipleEvents(1, &wsa_event, FALSE, WSA_INFINITE, FALSE)
+			== WSA_WAIT_FAILED) continue;
+		WSAResetEvent(wsa_event);		
+
+		ZeroMemory(&accept_addr, sizeof(SOCKADDR_IN));
+		sockAccept = WSAAccept(server_socket, (struct sockaddr *)&accept_addr, &addrlen, NULL, 0);
+		if (sockAccept == INVALID_SOCKET) continue;
+
+		std::string temp_ip = inet_ntoa(*((struct  in_addr*)(&accept_addr.sin_addr)));
+
+		{
+			std::lock_guard<std::mutex> guard(g_mutex);
+			client_map[temp_ip] = sockAccept;
+		}
+
+		Sleep(50);
+
+	}
 }

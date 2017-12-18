@@ -4,6 +4,7 @@
 
 #include <WinSock2.h>
 #include <string>
+#include <mutex>
 #include <unordered_map>
 
 #define INET_BUFF_LEN 1024*20
@@ -31,7 +32,7 @@ public:
 	~CINet();
 
 	//连接
-	bool connecting();
+	bool Connect();
 
 	//发送数据
 	int SendData(char *str_data);
@@ -67,7 +68,11 @@ private:
 	int UDPReciveData(char *str_data);
 	int TCPClientReciveData(char *str_data);
 	int TCPServerReciveData(char *str_data);
+
+	static void TCPAcceptThread(WSAEVENT &wsa_event, SOCKET &server_socket, 
+		std::unordered_map <std::string, SOCKET> &client_map);
 private:
+
 	WSAEVENT m_event;
 	SOCKET m_socket;
 	NetType m_net_type;
@@ -78,7 +83,6 @@ private:
 
 	//UDP本地监视端口
 	UINT m_udp_local_port;
-
 	//TCP服务端时  使用数据
 	UINT m_max_client_number;
 	std::unordered_map <std::string, SOCKET> m_client_umap;
