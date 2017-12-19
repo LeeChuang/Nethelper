@@ -16,7 +16,7 @@ public:
 	int SendData(char *str_data);
 
 	//接收数据
-	int ReciveData(char *str_data){ return 1; };
+	int ReceiveData(char *str_data);
 
 };
 
