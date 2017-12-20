@@ -54,8 +54,7 @@ bool CINetTcpClient::Connect()
 			WSAResetEvent(m_event);		//复位事件为无信号状态
 			if (d_error == WSA_WAIT_FAILED || d_error == WSA_WAIT_TIMEOUT)
 			{
-				if (m_event != WSA_INVALID_EVENT)
-					WSACloseEvent(m_event);
+				WSACloseEvent(m_event);
 				closesocket(m_socket);
 				m_socket = INVALID_SOCKET;
 				m_event = WSA_INVALID_EVENT;

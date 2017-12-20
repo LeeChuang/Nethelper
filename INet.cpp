@@ -55,7 +55,7 @@
 //		return TCPClientSendData(str_data);
 //}
 
-//int CINet::ReciveData(char* str_data)
+//int CINet::ReceiveData(char* str_data)
 //{
 //	if (m_net_type == UDP)
 //		return UDPReciveData(str_data);

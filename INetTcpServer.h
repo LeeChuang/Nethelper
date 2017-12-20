@@ -15,12 +15,21 @@ public:
 	int SendData(char *str_data);
 
 	//接收数据
-	int ReciveData(char *str_data) { return 1; };	
+	int ReceiveData(char *str_data);	
+
+	//发送数据
+	int SendData(char *str_data, std::string destination_ip);
+
+	//接收数据
+	int ReceiveData(char *str_data, std::string destination_ip);
 
 private:
 
-	static void TCPAcceptThread(WSAEVENT &wsa_event, SOCKET &server_socket,
-		std::unordered_map <std::string, SOCKET> *client_map);
+	void TCPAcceptThread();
+	
+	void ReceviceDataThread(std::string &client_ip);
+
+	
 	
 };
 

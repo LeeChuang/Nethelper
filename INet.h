@@ -6,15 +6,18 @@
 #include <string>
 #include <mutex>
 #include <unordered_map>
-
-#pragma comment(lib,"ws2_32.lib")
+#include <thread>
+#include <memory>
 
 #define INET_BUFF_LEN 1024*20
 #define DEFAULT_LINK_NUMBER 5
 #define DEFAULT_IP "127.0.0.1"
 #define DEFAULT_PORT 45678
 #define UDP_LOCAL_PORT 51515
-#define WAIT_CLIENT_LINK_TIME 5*1000
+#define WAIT_CLIENT_LINK_TIME 5*1000  
+#define SEND_RECEIVE_TIMEOUT 5*1000
+#define SERVER_RECEVIE_TIMEOUT 1000*30
+
 
 // 网络类型
 enum NetType{
@@ -54,11 +57,19 @@ public:
 	virtual int SendData(char *str_data) = 0;
 
 	//接收数据
-	virtual int ReciveData(char *str_data) = 0;
+	virtual int ReceiveData(char *str_data) = 0;
+
+	//发送数据
+	virtual int SendData(char *str_data, std::string destination_ip) = 0;
+
+	//接收数据
+	virtual int ReceiveData(char *str_data, std::string destination_ip) = 0;
 
 	//关闭连接
 	void Shutdown()
 	{
+
+		std::lock_guard<std::mutex> guard(g_mutex);
 		if (m_client_umap.size() > 0)
 		{
 			for (auto temp_map : m_client_umap)
@@ -68,9 +79,28 @@ public:
 			}
 			m_client_umap.clear();
 		}
+
+		if (m_last_client_data.size() > 0)
+			m_last_client_data.clear();
+
+		if (m_recevie_thread_map.size() > 0)
+		{
+			for (auto temp_map : m_recevie_thread_map)
+			{
+				temp_map.second->~thread();
+			}
+			m_recevie_thread_map.clear();
+		}
+
+		m_accept_thread.~thread();
+
 		if (m_socket != INVALID_SOCKET)
 			closesocket(m_socket);
+		if (m_event != WSA_INVALID_EVENT)
+			WSACloseEvent(m_event);
+
 		m_socket = INVALID_SOCKET;
+		m_event = WSA_INVALID_EVENT;
 	};
 
 	//初始化网络
@@ -88,6 +118,8 @@ public:
 	inline void SetUDPLocalPort(UINT port){ m_udp_local_port = port; }
 
 public:
+
+	std::mutex g_mutex;
 	WSAEVENT m_event;
 	SOCKET m_socket;
 	NetType m_net_type;
@@ -99,9 +131,13 @@ public:
 	//TCP服务端时  使用数据
 	UINT m_max_client_number;
 	std::unordered_map <std::string, SOCKET> m_client_umap;
-	
+	std::unordered_map <std::string, std::string> m_last_client_data;
 	//UDP本地监视端口
 	UINT m_udp_local_port;
+
+	std::thread m_accept_thread;
+	std::unordered_map<std::string, std::shared_ptr<std::thread>> m_recevie_thread_map;
+
 };
 
 #endif
