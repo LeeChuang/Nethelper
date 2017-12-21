@@ -68,7 +68,6 @@ public:
 	//关闭连接
 	void Shutdown()
 	{
-
 		std::lock_guard<std::mutex> guard(g_mutex);
 		if (m_client_umap.size() > 0)
 		{
@@ -81,7 +80,13 @@ public:
 		}
 
 		if (m_last_client_data.size() > 0)
+		{
+			for (auto temp_map : m_last_client_data)
+				temp_map.second.clear();
+
 			m_last_client_data.clear();
+		}
+			
 
 		if (m_recevie_thread_map.size() > 0)
 		{
@@ -131,7 +136,7 @@ public:
 	//TCP服务端时  使用数据
 	UINT m_max_client_number;
 	std::unordered_map <std::string, SOCKET> m_client_umap;
-	std::unordered_map <std::string, std::string> m_last_client_data;
+	std::unordered_map <std::string, std::list<std::string>> m_last_client_data;
 	//UDP本地监视端口
 	UINT m_udp_local_port;
 

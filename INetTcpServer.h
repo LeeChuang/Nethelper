@@ -27,7 +27,7 @@ private:
 
 	void TCPAcceptThread();
 	
-	void ReceviceDataThread(std::string &client_ip);
+	void ReceiveDataThread(std::string &client_ip);
 
 	
 	

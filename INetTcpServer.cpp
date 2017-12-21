@@ -2,6 +2,7 @@
 
 CINetTcpServer::CINetTcpServer()
 {
+
 }
 
 
@@ -207,7 +208,7 @@ void CINetTcpServer::TCPAcceptThread()
 				m_recevie_thread_map[temp_ip]->~thread();
 				m_recevie_thread_map.erase(temp_ip);
 			}
-			m_recevie_thread_map[temp_ip] = std::make_shared<std::thread>(std::bind(&CINetTcpServer::ReceviceDataThread, this, temp_ip));
+			m_recevie_thread_map[temp_ip] = std::make_shared<std::thread>(std::bind(&CINetTcpServer::ReceiveDataThread, this, temp_ip));
 			if (m_recevie_thread_map[temp_ip]->joinable())
 				m_recevie_thread_map[temp_ip]->detach();
 		}
@@ -220,6 +221,7 @@ void CINetTcpServer::TCPAcceptThread()
 int CINetTcpServer::ReceiveData(char *str_data)
 {
 	int recive_size = 0;
+	std::string str_map_key = "";
 	try
 	{
 		if (m_socket == INVALID_SOCKET)
@@ -227,14 +229,46 @@ int CINetTcpServer::ReceiveData(char *str_data)
 			if (!Connect()) return -2;
 		}
 
+		{
+			std::lock_guard<std::mutex> guard(g_mutex);
+			auto it_data_map = m_last_client_data.begin();
+			if (it_data_map == m_last_client_data.end())
+				return -10;
+			
+			str_map_key = it_data_map->first;
+			if (m_last_client_data[str_map_key].size() < 0)
+				return -9;
+
+			std::string temp_str = "";
+			temp_str = m_last_client_data[str_map_key].back();
+			if (m_last_client_data[str_map_key].size() > 1)  //保证有数据
+				m_last_client_data[str_map_key].pop_back();
+
+			recive_size = temp_str.length();
+			memcpy(str_data, temp_str.c_str(), recive_size);
+
+		}
+
+
 	}
 	catch (...)
 	{
-		closesocket(m_socket);
+		std::lock_guard<std::mutex> guard(g_mutex);
+		if (m_client_umap.find(str_map_key) != m_client_umap.end())
+		{
+			closesocket(m_client_umap[str_map_key]);
+			m_client_umap[str_map_key] = INVALID_SOCKET;
+			m_client_umap.erase(str_map_key);
+		}
+
+		if (m_last_client_data.find(str_map_key) != m_last_client_data.end())
+		{
+			m_last_client_data[str_map_key].clear();
+			m_last_client_data.erase(str_map_key);
+		}
+
 		WSACloseEvent(m_event);
-		m_socket = INVALID_SOCKET;
 		m_event = WSA_INVALID_EVENT;
-		m_accept_thread.~thread();
 		return -1;
 	}
 
@@ -258,8 +292,16 @@ int CINetTcpServer::ReceiveData(char *str_data, std::string destination_ip)
 			if (it_data_map == m_last_client_data.end())
 				return -10;
 
-			recive_size = m_last_client_data[destination_ip].length();
-			memcpy(str_data, m_last_client_data[destination_ip].c_str(), recive_size);
+			if (m_last_client_data[destination_ip].size() < 0)
+				return -9;
+
+			std::string temp_str = "";
+			temp_str = m_last_client_data[destination_ip].back();
+			if (m_last_client_data[destination_ip].size() > 1)  //保证有数据
+				m_last_client_data[destination_ip].pop_back();
+
+			recive_size = temp_str.length();
+			memcpy(str_data, temp_str.c_str(), recive_size);
 
 		}
 
@@ -274,7 +316,11 @@ int CINetTcpServer::ReceiveData(char *str_data, std::string destination_ip)
 			m_client_umap.erase(destination_ip);
 		}
 		if (m_last_client_data.find(destination_ip) != m_last_client_data.end())
+		{
+			m_last_client_data[destination_ip].clear();
 			m_last_client_data.erase(destination_ip);
+		}
+			
 		
 		WSACloseEvent(m_event);
 		m_event = WSA_INVALID_EVENT;
@@ -285,7 +331,7 @@ int CINetTcpServer::ReceiveData(char *str_data, std::string destination_ip)
 
 }
 
-void CINetTcpServer::ReceviceDataThread(
+void CINetTcpServer::ReceiveDataThread(
 	std::string &client_ip/*
 	WSAEVENT &wsa_event,
 	std::unordered_map <std::string, SOCKET> *client_map,
@@ -333,6 +379,7 @@ void CINetTcpServer::ReceviceDataThread(
 			WSACloseEvent(m_event);
 			recevie_socket = INVALID_SOCKET;
 			m_client_umap.erase(client_ip);
+			m_last_client_data[client_ip].clear();
 			m_last_client_data.erase(client_ip);
 			m_event = WSA_INVALID_EVENT;
 			break;
@@ -346,6 +393,7 @@ void CINetTcpServer::ReceviceDataThread(
 				WSACloseEvent(m_event);
 				recevie_socket = INVALID_SOCKET;
 				m_client_umap.erase(client_ip);
+				m_last_client_data[client_ip].clear();
 				m_last_client_data.erase(client_ip);
 				m_event = WSA_INVALID_EVENT;
 				break;
@@ -362,7 +410,7 @@ void CINetTcpServer::ReceviceDataThread(
 		control_number = 0;
 		{
 			std::lock_guard<std::mutex> guard(g_mutex);
-			m_last_client_data[client_ip] = str_data;
+			m_last_client_data[client_ip].push_front(str_data);
 		}
 
 		
