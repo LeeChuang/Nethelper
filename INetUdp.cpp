@@ -1,5 +1,5 @@
 #include "INetUdp.h"
-
+#include <iostream>
 
 CINetUdp::CINetUdp()
 {
@@ -15,6 +15,8 @@ bool CINetUdp::Connect()
 {
 	try
 	{
+		if (m_socket != INVALID_SOCKET)
+			return true;
 		if ((m_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
 			return false;
 
@@ -36,9 +38,12 @@ bool CINetUdp::Connect()
 			return false;
 		}
 
-		m_accept_thread = std::thread(&CINetUdp::ReceiveThread,this);
+		m_accept_running = true;
 		if (m_accept_thread.joinable())
-			m_accept_thread.detach();
+		{
+			m_accept_thread.join();
+		}
+		m_accept_thread = std::thread(&CINetUdp::ReceiveThread,this);
 	}
 	catch (...)
 	{
@@ -53,6 +58,11 @@ int CINetUdp::SendData(char *str_data)
 	SOCKET temp_socket = INVALID_SOCKET;
 	try
 	{
+		if (m_socket == INVALID_SOCKET)
+		{
+			if (!Connect()) return -2;
+		}
+
 		if ((temp_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
 			return -1;
 
@@ -143,8 +153,20 @@ void CINetUdp::ReceiveThread()
 {
 	try
 	{
-		while (true)
+		DWORD wsa_error = 0;
+		while (m_accept_running)
 		{
+			struct timeval tv;
+			fd_set readfds;
+			tv.tv_sec = UDP_RECEIVE_TIMEOUT;
+			tv.tv_usec = 0;
+			FD_ZERO(&readfds);
+			FD_SET(m_socket, &readfds);
+
+			if (select(1, &readfds, NULL, NULL, &tv) <= 0)
+			{
+				continue;
+			}
 			char temp_data[INET_BUFF_LEN] = "\0";
 			SOCKADDR_IN temp_client_addr;
 			int temp_len = sizeof(SOCKADDR_IN);
@@ -168,7 +190,7 @@ void CINetUdp::ReceiveThread()
 		if (m_socket != INVALID_SOCKET)
 			closesocket(m_socket);
 		m_socket = INVALID_SOCKET;
-
+		std::cout << " 发生异常，进行重连" << std::endl;
 		return;
 	}
 }

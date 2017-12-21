@@ -15,6 +15,9 @@ bool CINetTcpServer::Connect()
 {
 	try
 	{
+		if (m_socket != INVALID_SOCKET)
+			return true;
+
 		if ((m_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
 			return false;
 
@@ -63,11 +66,15 @@ bool CINetTcpServer::Connect()
 			m_event = WSA_INVALID_EVENT;
 			return false;
 		}
-
+		m_accept_running = true;
+		if (m_accept_thread.joinable())
+		{
+			m_accept_thread.detach();
+		}
 		m_accept_thread = std::thread(&CINetTcpServer::TCPAcceptThread,this);
 
-		if (m_accept_thread.joinable())
-			m_accept_thread.detach();
+	/*	if (m_accept_thread.joinable())
+			m_accept_thread.detach();*/
 
 	}
 	catch (...)
@@ -121,7 +128,7 @@ int CINetTcpServer::SendData(char *str_data)
 	}
 	catch (...)
 	{
-		return -1;
+		return -5;
 	}
 	return send_size;
 }
@@ -168,7 +175,33 @@ int CINetTcpServer::SendData(char *str_data, std::string destination_ip)
 	}
 	catch (...)
 	{
-		return -1;
+		std::lock_guard<std::mutex> guard(g_mutex);
+		if (m_client_umap.find(destination_ip) != m_client_umap.end())
+		{
+			closesocket(m_client_umap[destination_ip]);
+			m_client_umap[destination_ip] = INVALID_SOCKET;
+			m_client_umap.erase(destination_ip);
+		}
+		if (m_last_client_data.find(destination_ip) != m_last_client_data.end())
+		{
+			m_last_client_data[destination_ip].clear();
+			m_last_client_data.erase(destination_ip);
+		}
+		if (m_client_running_map.find(destination_ip) != m_client_running_map.end())
+		{
+			m_client_running_map[destination_ip] = false;
+			m_client_running_map.erase(destination_ip);
+		}
+		if (m_recevie_thread_map.find(destination_ip) != m_recevie_thread_map.end())
+		{
+			if (m_recevie_thread_map[destination_ip]->joinable())
+				m_recevie_thread_map[destination_ip]->join();
+			m_last_client_data.erase(destination_ip);
+		}
+
+		WSACloseEvent(m_event);
+		m_event = WSA_INVALID_EVENT;
+		send_size = -1;
 	}
 	return send_size;
 }
@@ -178,7 +211,7 @@ void CINetTcpServer::TCPAcceptThread()
 	int addr_len = sizeof(accept_addr);
 	SOCKET sock_accept = INVALID_SOCKET;
 	DWORD wsa_error = 0;
-	while (true)
+	while (m_accept_running)
 	{
 
 		wsa_error = WSAWaitForMultipleEvents(1, &m_event, FALSE, WAIT_CLIENT_LINK_TIME, FALSE);
@@ -197,7 +230,7 @@ void CINetTcpServer::TCPAcceptThread()
 		sock_accept = WSAAccept(m_socket, (struct sockaddr *)&accept_addr, &addr_len, NULL, 0);
 		if (sock_accept == INVALID_SOCKET) continue;
 
-		std::string temp_ip = inet_ntoa(*((struct  in_addr*)(&accept_addr.sin_addr)));
+		std::string temp_ip = inet_ntoa(accept_addr.sin_addr);
 		int temp_port = ntohs(accept_addr.sin_port);
 		//std::tuple<std::string, int> temp_inet_data = std::make_tuple(temp_ip,temp_port);
 		{
@@ -205,12 +238,17 @@ void CINetTcpServer::TCPAcceptThread()
 			m_client_umap[temp_ip] = sock_accept;
 			if (m_recevie_thread_map.find(temp_ip) != m_recevie_thread_map.end())
 			{
-				m_recevie_thread_map[temp_ip]->~thread();
+				m_client_running_map[temp_ip] = false;
+				if (m_recevie_thread_map[temp_ip]->joinable())
+					m_recevie_thread_map[temp_ip]->join();  //
+
 				m_recevie_thread_map.erase(temp_ip);
 			}
+			m_client_running_map[temp_ip] = true;
 			m_recevie_thread_map[temp_ip] = std::make_shared<std::thread>(std::bind(&CINetTcpServer::ReceiveDataThread, this, temp_ip));
-			if (m_recevie_thread_map[temp_ip]->joinable())
-				m_recevie_thread_map[temp_ip]->detach();
+	
+			/*		if (m_recevie_thread_map[temp_ip]->joinable())
+				m_recevie_thread_map[temp_ip]->detach();*/
 		}
 
 		Sleep(50);
@@ -260,12 +298,26 @@ int CINetTcpServer::ReceiveData(char *str_data)
 			m_client_umap[str_map_key] = INVALID_SOCKET;
 			m_client_umap.erase(str_map_key);
 		}
-
 		if (m_last_client_data.find(str_map_key) != m_last_client_data.end())
 		{
 			m_last_client_data[str_map_key].clear();
 			m_last_client_data.erase(str_map_key);
 		}
+		if (m_client_running_map.find(str_map_key) != m_client_running_map.end())
+		{
+			m_client_running_map[str_map_key] = false;
+			m_client_running_map.erase(str_map_key);
+		}
+		if (m_recevie_thread_map.find(str_map_key) != m_recevie_thread_map.end())
+		{
+			if (m_recevie_thread_map[str_map_key]->joinable())
+				m_recevie_thread_map[str_map_key]->join();
+			m_last_client_data.erase(str_map_key);
+		}
+
+		WSACloseEvent(m_event);
+		m_event = WSA_INVALID_EVENT;
+		return -1;
 
 		WSACloseEvent(m_event);
 		m_event = WSA_INVALID_EVENT;
@@ -320,8 +372,18 @@ int CINetTcpServer::ReceiveData(char *str_data, std::string destination_ip)
 			m_last_client_data[destination_ip].clear();
 			m_last_client_data.erase(destination_ip);
 		}
+		if (m_client_running_map.find(destination_ip) != m_client_running_map.end())
+		{
+			m_client_running_map[destination_ip] = false;
+			m_client_running_map.erase(destination_ip);
+		}
+		if (m_recevie_thread_map.find(destination_ip) != m_recevie_thread_map.end())
+		{
+			if(m_recevie_thread_map[destination_ip]->joinable())
+				m_recevie_thread_map[destination_ip]->join();
+			m_last_client_data.erase(destination_ip);
+		}
 			
-		
 		WSACloseEvent(m_event);
 		m_event = WSA_INVALID_EVENT;
 		return -1;
@@ -341,6 +403,9 @@ void CINetTcpServer::ReceiveDataThread(
 	WSAEVENT temp_event = WSA_INVALID_EVENT;
 	{
 		std::lock_guard<std::mutex> guard(g_mutex);
+		if (m_client_running_map.find(client_ip) == m_client_running_map.end())
+			return;
+
 		auto it_client_map = m_client_umap.find(client_ip);
 		if (it_client_map == m_client_umap.end())
 			return;
@@ -368,10 +433,10 @@ void CINetTcpServer::ReceiveDataThread(
 	}
 
 	int control_number = 0;
-	while (true)
+	while (m_client_running_map[client_ip])
 	{
 		int temp_recevie_size = 0;
-		DWORD d_error = WSAWaitForMultipleEvents(1, &temp_event, FALSE, SERVER_RECEVIE_TIMEOUT, FALSE);
+		DWORD d_error = WSAWaitForMultipleEvents(1, &temp_event, FALSE, SERVER_RECEIVE_TIMEOUT, FALSE);
 		if (d_error == WSA_WAIT_FAILED )
 		{
 			std::lock_guard<std::mutex> guard(g_mutex);
@@ -386,7 +451,7 @@ void CINetTcpServer::ReceiveDataThread(
 		}
 		else if (d_error == WSA_WAIT_TIMEOUT)
 		{
-			if (control_number == 12)
+			if (control_number == 120)
 			{
 				std::lock_guard<std::mutex> guard(g_mutex);
 				closesocket(recevie_socket);
@@ -413,7 +478,6 @@ void CINetTcpServer::ReceiveDataThread(
 			m_last_client_data[client_ip].push_front(str_data);
 		}
 
-		
 	}
 	
 }

@@ -23,6 +23,7 @@ public:
 	//接收数据
 	int ReceiveData(char *str_data, std::string destination_ip);
 private:
+
 	void ReceiveThread();
 
 };

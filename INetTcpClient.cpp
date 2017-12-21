@@ -14,6 +14,9 @@ bool CINetTcpClient::Connect()
 {
 	try
 	{
+		if (m_socket != INVALID_SOCKET)
+			return true;
+
 		if ((m_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
 			return false;
 

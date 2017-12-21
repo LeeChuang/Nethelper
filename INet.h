@@ -14,10 +14,10 @@
 #define DEFAULT_IP "127.0.0.1"
 #define DEFAULT_PORT 45678
 #define UDP_LOCAL_PORT 51515
-#define WAIT_CLIENT_LINK_TIME 5*1000  
-#define SEND_RECEIVE_TIMEOUT 5*1000
-#define SERVER_RECEVIE_TIMEOUT 1000*30
-
+#define WAIT_CLIENT_LINK_TIME 1000*3
+#define SEND_RECEIVE_TIMEOUT 1000*3
+#define SERVER_RECEIVE_TIMEOUT 1000*3
+#define UDP_RECEIVE_TIMEOUT 3
 
 // 网络类型
 enum NetType{
@@ -68,36 +68,52 @@ public:
 	//关闭连接
 	void Shutdown()
 	{
-		std::lock_guard<std::mutex> guard(g_mutex);
-		if (m_client_umap.size() > 0)
 		{
-			for (auto temp_map : m_client_umap)
+			std::lock_guard<std::mutex> guard(g_mutex);
+			if (m_client_umap.size() > 0)
 			{
-				if (temp_map.second != INVALID_SOCKET)
-					closesocket(temp_map.second);
+				for (auto temp_map : m_client_umap)
+				{
+					if (temp_map.second != INVALID_SOCKET)
+						closesocket(temp_map.second);
+				}
+				m_client_umap.clear();
 			}
-			m_client_umap.clear();
-		}
 
-		if (m_last_client_data.size() > 0)
-		{
-			for (auto temp_map : m_last_client_data)
-				temp_map.second.clear();
-
-			m_last_client_data.clear();
-		}
-			
-
-		if (m_recevie_thread_map.size() > 0)
-		{
-			for (auto temp_map : m_recevie_thread_map)
+			if (m_client_running_map.size() > 0)
 			{
-				temp_map.second->~thread();
+
+				for (auto temp_map : m_client_running_map)
+				{
+					temp_map.second = false;
+				}
+				m_client_running_map.clear();
 			}
-			m_recevie_thread_map.clear();
+
+			if (m_recevie_thread_map.size() > 0)
+			{
+				for (auto temp_map : m_recevie_thread_map)
+				{
+					if (temp_map.second->joinable())
+						temp_map.second->detach();
+				}
+				m_recevie_thread_map.clear();
+			}
 		}
 
-		m_accept_thread.~thread();
+		m_accept_running = false;
+		if (m_accept_thread.joinable())
+			m_accept_thread.detach();
+
+		{
+			if (m_last_client_data.size() > 0)
+			{
+				for (auto temp_map : m_last_client_data)
+					temp_map.second.clear();
+
+				m_last_client_data.clear();
+			}
+		}
 
 		if (m_socket != INVALID_SOCKET)
 			closesocket(m_socket);
@@ -135,11 +151,13 @@ public:
 
 	//TCP服务端时  使用数据
 	UINT m_max_client_number;
+	std::unordered_map <std::string, bool> m_client_running_map;
 	std::unordered_map <std::string, SOCKET> m_client_umap;
 	std::unordered_map <std::string, std::list<std::string>> m_last_client_data;
 	//UDP本地监视端口
 	UINT m_udp_local_port;
 
+	bool m_accept_running;
 	std::thread m_accept_thread;
 	std::unordered_map<std::string, std::shared_ptr<std::thread>> m_recevie_thread_map;
 
