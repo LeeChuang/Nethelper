@@ -1,6 +1,5 @@
-#pragma once
-#ifndef INET_TCP_SERVER_H
-#define INET_TCP_SERVER_H
+#ifndef _INET_TCP_SERVER_H
+#define _INET_TCP_SERVER_H
 #include "INet.h"
 class CINetTcpServer :
 	public CINet

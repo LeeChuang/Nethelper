@@ -1,6 +1,5 @@
-#pragma once
-#ifndef INET_H
-#define INET_H
+#ifndef _INET_H
+#define _INET_H
 
 #include <WinSock2.h>
 #include <string>
@@ -9,7 +8,7 @@
 #include <thread>
 #include <memory>
 
-#define INET_BUFF_LEN 1024*20
+#define INET_BUFF_LEN 1024*16
 #define DEFAULT_LINK_NUMBER 5
 #define DEFAULT_IP "127.0.0.1"
 #define DEFAULT_PORT 45678

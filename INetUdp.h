@@ -1,6 +1,5 @@
-#pragma once
-#ifndef INET_UDP_H
-#define INET_UDP_H
+#ifndef _INET_UDP_H
+#define _INET_UDP_H
 #include "INet.h"
 class CINetUdp :
 	public CINet

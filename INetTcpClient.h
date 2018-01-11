@@ -1,6 +1,5 @@
-#pragma once
-#ifndef INET_TCP_CLIENT_H
-#define INET_TCP_CLIENT_H
+#ifndef _INET_TCP_CLIENT_H
+#define _INET_TCP_CLIENT_H
 
 #include "INet.h"
 class CINetTcpClient :

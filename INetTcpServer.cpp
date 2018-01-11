@@ -69,7 +69,7 @@ bool CINetTcpServer::Connect()
 		m_accept_running = true;
 		if (m_accept_thread.joinable())
 		{
-			m_accept_thread.detach();
+			m_accept_thread.join();
 		}
 		m_accept_thread = std::thread(&CINetTcpServer::TCPAcceptThread,this);
 
